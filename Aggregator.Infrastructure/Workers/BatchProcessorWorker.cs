@@ -3,6 +3,7 @@ using Aggregator.Core.Models;
 using Aggregator.Core.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Prometheus;
 
 namespace Aggregator.Infrastructure.Workers;
 
@@ -14,6 +15,10 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
 
     private const int BatchSize = 1000;
     private readonly TimeSpan _batchTimeout = TimeSpan.FromMilliseconds(500);
+
+    private static readonly Counter TicksWrittenCounter = Metrics.CreateCounter(
+        "aggregator_ticks_written_total",
+        "Total ticks successfully written to DB via COPY BINARY.");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -61,7 +66,7 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                         }
                     }
                 }
-                catch (OperationCanceledException) { /* Таймаут */ }
+                catch (OperationCanceledException) { }
 
                 if (buffer.Count > 0)
                 {
@@ -114,9 +119,12 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
 
     private async Task FlushAsync(List<Tick> buffer, CancellationToken cancellationToken)
     {
+        if (buffer.Count == 0) return;
+
         try
         {
             await _repository.SaveBatchAsync(buffer, cancellationToken);
+            TicksWrittenCounter.Inc(buffer.Count);
         }
         catch (Exception ex)
         {

@@ -31,23 +31,44 @@ public class TickRepository : ITickRepository
         await _retryPipeline.ExecuteAsync(async ct =>
         {
             await using var connection = await _dataSource.OpenConnectionAsync(ct);
+            await using var transaction = await connection.BeginTransactionAsync(ct);
 
-            await using var writer = await connection.BeginBinaryImportAsync(
-                "COPY Ticks (Ticker, Price, Volume, TimestampMs, SourceId) FROM STDIN (FORMAT BINARY)", ct);
+            const string createTempTableSql =
+                "CREATE TEMP TABLE IF NOT EXISTS temp_ticks (LIKE Ticks EXCLUDING INDEXES) ON COMMIT DELETE ROWS;";
 
-            foreach (var tick in ticks)
+            await using (var cmd = new NpgsqlCommand(createTempTableSql, connection, transaction))
             {
-                await writer.StartRowAsync(ct);
-                await writer.WriteAsync(tick.Ticker, NpgsqlDbType.Text, ct);
-                await writer.WriteAsync(tick.Price, NpgsqlDbType.Numeric, ct);
-                await writer.WriteAsync(tick.Volume, NpgsqlDbType.Numeric, ct);
-                await writer.WriteAsync(tick.TimestampMs, NpgsqlDbType.Bigint, ct);
-                await writer.WriteAsync((short)tick.Source, NpgsqlDbType.Smallint, ct);
+                await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            await writer.CompleteAsync(ct);
+            await using (var writer = await connection.BeginBinaryImportAsync(
+                "COPY temp_ticks (Ticker, Price, Volume, TimestampMs, SourceId) FROM STDIN (FORMAT BINARY)", ct))
+            {
+                foreach (var tick in ticks)
+                {
+                    await writer.StartRowAsync(ct);
+                    await writer.WriteAsync(tick.Ticker, NpgsqlDbType.Text, ct);
+                    await writer.WriteAsync(tick.Price, NpgsqlDbType.Numeric, ct);
+                    await writer.WriteAsync(tick.Volume, NpgsqlDbType.Numeric, ct);
+                    await writer.WriteAsync(tick.TimestampMs, NpgsqlDbType.Bigint, ct);
+                    await writer.WriteAsync((short)tick.Source, NpgsqlDbType.Smallint, ct);
+                }
+                await writer.CompleteAsync(ct);
+            }
 
-            _logger.LogDebug("Successfully saved {Count} ticks to DB.", ticks.Count);
+            const string mergeSql = @"
+                INSERT INTO Ticks (Ticker, Price, Volume, TimestampMs, SourceId)
+                SELECT Ticker, Price, Volume, TimestampMs, SourceId FROM temp_ticks
+                ON CONFLICT (Ticker, SourceId, TimestampMs) DO NOTHING;";
+
+            await using (var cmd = new NpgsqlCommand(mergeSql, connection, transaction))
+            {
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await transaction.CommitAsync(ct);
+
+            _logger.LogDebug("Successfully saved {Count} ticks to DB using Bulk Upsert.", ticks.Count);
 
         }, cancellationToken);
     }

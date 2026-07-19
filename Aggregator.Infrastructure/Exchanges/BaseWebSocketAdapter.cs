@@ -11,28 +11,20 @@ using Polly.Registry;
 
 namespace Aggregator.Infrastructure.Exchanges;
 
-public abstract class BaseWebSocketAdapter : BackgroundService
+public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, ResiliencePipelineProvider<string> pipelineProvider) : BackgroundService
 {
-    private readonly TickChannelBus _bus;
-    private readonly ILogger _logger;
-    private readonly ResiliencePipeline _retryPipeline;
+    protected readonly TickChannelBus Bus = bus ?? throw new ArgumentNullException(nameof(bus));
+    private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("ws-retry");
     private readonly TimeSpan _idleTimeout = TimeSpan.FromSeconds(15);
 
     protected abstract Uri Endpoint { get; }
     protected abstract ExchangeSource Source { get; }
 
-    protected BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, ResiliencePipelineProvider<string> pipelineProvider)
-    {
-        _bus = bus ?? throw new ArgumentNullException(nameof(bus));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _retryPipeline = pipelineProvider.GetPipeline("ws-retry");
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await _retryPipeline.ExecuteAsync(async ct =>
         {
-            // ИСПРАВЛЕНИЕ: Чистый блок using управляет жизненным циклом сокета, никаких ручных сомнительных Dispose
             using var webSocket = new ClientWebSocket();
             webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(10);
 
@@ -91,12 +83,12 @@ public abstract class BaseWebSocketAdapter : BackgroundService
         finally
         {
             await writer.CompleteAsync();
-            // ИСПРАВЛЕНИЕ: Больше не вызываем webSocket.Dispose() здесь, отдаем управление внешнему using scope
         }
     }
 
     private async Task ReadPipeAsync(PipeReader reader, CancellationToken ct)
     {
+        const int MaxMessageSize = 4096;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -107,26 +99,29 @@ public abstract class BaseWebSocketAdapter : BackgroundService
                 var consumed = buffer.Start;
                 var examined = buffer.End;
 
+                if (buffer.Length > MaxMessageSize)
+                {
+                    _logger.LogCritical("[SECURITY] Poison pill detected in stream! Buffer size {Length} bytes exceeds limit. Flushing pipe to prevent deadlock.", buffer.Length);
+                    reader.AdvanceTo(buffer.End, buffer.End);
+                    continue;
+                }
+
                 while (TryParseJsonMessage(ref buffer, out var message, out var nextPosition))
                 {
-                    ProcessMessage(in message);
+                    await ProcessMessageAsync(message, ct);
                     consumed = nextPosition;
                     buffer = buffer.Slice(nextPosition);
                 }
 
                 reader.AdvanceTo(consumed, examined);
-
                 if (result.IsCompleted) break;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error reading and parsing pipe data for {Source}.", Source);
+            _logger.LogError(ex, "Error reading pipe data.");
         }
-        finally
-        {
-            await reader.CompleteAsync();
-        }
+        finally { await reader.CompleteAsync(); }
     }
 
     private static bool TryParseJsonMessage(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> message, out SequencePosition nextPosition)
@@ -155,19 +150,21 @@ public abstract class BaseWebSocketAdapter : BackgroundService
         }
         catch (JsonException)
         {
-            // Сообщение фрагментировано, поток TCP еще не доставил оставшиеся байты. Ждем.
         }
         return false;
     }
 
-    private void ProcessMessage(in ReadOnlySequence<byte> buffer)
+    private async ValueTask ProcessMessageAsync(ReadOnlySequence<byte> buffer, CancellationToken ct)
     {
         try
         {
             var jsonReader = new Utf8JsonReader(buffer);
             var parsedTick = ParseTick(ref jsonReader);
 
-            if (parsedTick != null) _bus.Publish(parsedTick.Value);
+            if (parsedTick != null)
+            {
+                await Bus.PublishAsync(parsedTick.Value, ct);
+            }
         }
         catch (JsonException ex)
         {

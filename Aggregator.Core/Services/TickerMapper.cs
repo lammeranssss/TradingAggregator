@@ -29,6 +29,13 @@ public class TickerMapper
 
     public bool TryGetIdFromSpan(ReadOnlySpan<byte> span, out int tickerId, out string tickerString)
     {
+        if (span.Length > 128)
+        {
+            tickerId = 0;
+            tickerString = string.Empty;
+            return false;
+        }
+
         var hash = ComputeFnv1aHash(span);
 
         if (_spanCache.TryGetValue(hash, out var node) && span.SequenceEqual(node.Utf8Bytes))
@@ -39,8 +46,7 @@ public class TickerMapper
         }
 
         int maxCharCount = Encoding.UTF8.GetMaxCharCount(span.Length);
-
-        Span<char> chars = maxCharCount <= 128 ? stackalloc char[128] : new char[maxCharCount];
+        Span<char> chars = stackalloc char[maxCharCount];
         int charCount = Encoding.UTF8.GetChars(span, chars);
 
         var pooledString = StringPool.Shared.GetOrAdd(chars.Slice(0, charCount));

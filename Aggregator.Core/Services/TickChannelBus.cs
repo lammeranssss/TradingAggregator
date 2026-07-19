@@ -1,34 +1,46 @@
 ﻿using System.Threading.Channels;
 using Aggregator.Core.Models;
-using Microsoft.Extensions.Logging;
+using Prometheus;
 
 namespace Aggregator.Core.Services;
 
 public class TickChannelBus
 {
     private readonly Channel<Tick> _channel;
-    private readonly ILogger<TickChannelBus> _logger;
+
+    public int Capacity { get; } = 100_000;
+
+    private static readonly string[] SourceLabels = ["unknown", "binance", "coinbase", "kraken"];
+
+    private static readonly Counter TicksIngestedCounter = Metrics.CreateCounter(
+        "aggregator_ticks_ingested_total",
+        "Total ticks successfully read from exchange sockets.",
+        new CounterConfiguration { LabelNames = new[] { "exchange" } });
 
     public int CurrentCount => _channel.Reader.Count;
+    public ChannelReader<Tick> Reader => _channel.Reader;
 
-    public TickChannelBus(ILogger<TickChannelBus> logger, int capacity = 100_000)
+    public TickChannelBus()
     {
-        _logger = logger;
-
-        var options = new BoundedChannelOptions(capacity)
+        var options = new BoundedChannelOptions(Capacity)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            AllowSynchronousContinuations = false,
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
         };
-
         _channel = Channel.CreateBounded<Tick>(options);
     }
 
-    public void Publish(in Tick tick) => _channel.Writer.TryWrite(tick);
+    public async ValueTask PublishAsync(Tick tick, CancellationToken ct)
+    {
+        await _channel.Writer.WriteAsync(tick, ct);
 
-    public IAsyncEnumerable<Tick> ReadAllAsync(CancellationToken cancellationToken)
-        => _channel.Reader.ReadAllAsync(cancellationToken);
+        int sourceIndex = (byte)tick.Source;
+        var label = sourceIndex < SourceLabels.Length ? SourceLabels[sourceIndex] : SourceLabels[0];
+
+        TicksIngestedCounter.WithLabels(label).Inc();
+    }
 
     public ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken)
         => _channel.Reader.WaitToReadAsync(cancellationToken);
