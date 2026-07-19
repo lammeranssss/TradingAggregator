@@ -1,12 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Aggregator.Core.Models;
 
-namespace Aggregator.Core.Interfaces
+namespace Aggregator.Core.Interfaces;
+
+public interface ITickRepository
 {
-    internal class ITickRepository
-    {
-    }
+    Task SaveBatchAsync(IReadOnlyCollection<Tick> ticks, CancellationToken cancellationToken);
 }

@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿namespace Aggregator.Core.Models;
 
-namespace Aggregator.Core.Models
-{
-    internal class Tick
-    {
-    }
-}
+public readonly record struct Tick(
+    string Ticker,
+    decimal Price,
+    decimal Volume,
+    long TimestampMs,
+    ExchangeSource Source
+);

@@ -1,12 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Aggregator.Core.Models;
 
-namespace Aggregator.Core.Interfaces
+namespace Aggregator.Core.Interfaces;
+
+public interface IDeduplicator
 {
-    internal class IDeduplicator
-    {
-    }
+    bool IsUnique(in Tick tick, int tickerId);
 }
