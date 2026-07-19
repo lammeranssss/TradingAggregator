@@ -82,5 +82,6 @@ public class LockFreeDeduplicator : IDeduplicator, IDisposable
         _evictionTimer.Dispose();
         _cache.Clear();
         _evictionQueue.Clear();
+        GC.SuppressFinalize(this);
     }
 }

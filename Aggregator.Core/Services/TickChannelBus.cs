@@ -4,10 +4,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Aggregator.Core.Services;
 
-/// <summary>
-/// Шина сообщений на базе System.Threading.Channels.
-/// Обеспечивает non-blocking backpressure для WebSocket клиентов.
-/// </summary>
 public class TickChannelBus
 {
     private readonly Channel<Tick> _channel;
@@ -29,15 +25,16 @@ public class TickChannelBus
         _channel = Channel.CreateBounded<Tick>(options);
     }
 
-    public void Publish(in Tick tick)
-    {
-        _channel.Writer.TryWrite(tick);
-    }
+    public void Publish(in Tick tick) => _channel.Writer.TryWrite(tick);
 
     public IAsyncEnumerable<Tick> ReadAllAsync(CancellationToken cancellationToken)
-    {
-        return _channel.Reader.ReadAllAsync(cancellationToken);
-    }
+        => _channel.Reader.ReadAllAsync(cancellationToken);
+
+    public ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken)
+        => _channel.Reader.WaitToReadAsync(cancellationToken);
+
+    public bool TryRead(out Tick tick)
+        => _channel.Reader.TryRead(out tick);
 
     public void Complete() => _channel.Writer.TryComplete();
 }
