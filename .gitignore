@@ -399,3 +399,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+
+# Docker / Postgres Data Volume
+pg_data/
+*.log
