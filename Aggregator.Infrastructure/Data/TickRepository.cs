@@ -8,21 +8,14 @@ using Polly.Registry;
 
 namespace Aggregator.Infrastructure.Data;
 
-public class TickRepository : ITickRepository
+public class TickRepository(
+    NpgsqlDataSource dataSource,
+    ILogger<TickRepository> logger,
+    ResiliencePipelineProvider<string> pipelineProvider) : ITickRepository
 {
-    private readonly NpgsqlDataSource _dataSource;
-    private readonly ILogger<TickRepository> _logger;
-    private readonly ResiliencePipeline _retryPipeline;
-
-    public TickRepository(
-        NpgsqlDataSource dataSource,
-        ILogger<TickRepository> logger,
-        ResiliencePipelineProvider<string> pipelineProvider)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _logger = logger;
-        _retryPipeline = pipelineProvider.GetPipeline("db-retry");
-    }
+    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+    private readonly ILogger<TickRepository> _logger = logger;
+    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("db-retry");
 
     public async Task SaveBatchAsync(IReadOnlyCollection<Tick> ticks, CancellationToken cancellationToken)
     {
@@ -33,8 +26,14 @@ public class TickRepository : ITickRepository
             await using var connection = await _dataSource.OpenConnectionAsync(ct);
             await using var transaction = await connection.BeginTransactionAsync(ct);
 
-            const string createTempTableSql =
-                "CREATE TEMP TABLE IF NOT EXISTS temp_ticks (LIKE Ticks EXCLUDING INDEXES) ON COMMIT DELETE ROWS;";
+            const string createTempTableSql = @"
+    CREATE TEMP TABLE temp_ticks (
+        Ticker VARCHAR(50),
+        Price NUMERIC(18, 8),
+        Volume NUMERIC(18, 8),
+        TimestampMs BIGINT,
+        SourceId SMALLINT
+    ) ON COMMIT DROP;";
 
             await using (var cmd = new NpgsqlCommand(createTempTableSql, connection, transaction))
             {

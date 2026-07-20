@@ -33,7 +33,7 @@ public class CoinbaseWebSocketAdapter(
 
     protected override Tick? ParseTick(ref Utf8JsonReader reader)
     {
-        if (reader.TokenType != JsonTokenType.StartObject) return null;
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return null;
 
         long timestampMs = 0;
         int tickerId = 0;
@@ -64,13 +64,13 @@ public class CoinbaseWebSocketAdapter(
             }
             else if (propName.SequenceEqual(TimeProp))
             {
-                if (Utf8Parser.TryParse(reader.ValueSpan, out DateTimeOffset dto, out _, 'O'))
+                if (reader.TryGetDateTimeOffset(out DateTimeOffset dto))
                 {
                     timestampMs = dto.ToUnixTimeMilliseconds();
                 }
                 else
                 {
-                    _logger.LogWarning("Coinbase ISO-8601 timestamp conversion error.");
+                    _logger.LogWarning("Coinbase timestamp format error.");
                     return null;
                 }
             }

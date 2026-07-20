@@ -33,9 +33,9 @@ public class BinanceWebSocketAdapter(
 
     protected override Tick? ParseTick(ref Utf8JsonReader reader)
     {
-        if (reader.TokenType != JsonTokenType.StartObject) return null;
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return null;
 
-        long timestampMs = 0;
+        long timestampMs = 0; 
         int tickerId = 0;
         string tickerStr = string.Empty;
         decimal price = 0;
