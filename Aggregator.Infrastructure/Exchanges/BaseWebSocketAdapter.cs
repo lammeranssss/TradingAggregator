@@ -88,7 +88,7 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
 
     private async Task ReadPipeAsync(PipeReader reader, CancellationToken ct)
     {
-        const int MaxMessageSize = 4096;
+        const int MaxMessageSize = 1024 * 1024;
         try
         {
             while (!ct.IsCancellationRequested)
