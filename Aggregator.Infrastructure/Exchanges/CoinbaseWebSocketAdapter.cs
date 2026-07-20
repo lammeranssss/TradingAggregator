@@ -4,6 +4,7 @@ using System.Text.Json;
 using Aggregator.Core.Interfaces;
 using Aggregator.Core.Models;
 using Aggregator.Core.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Polly.Registry;
 
@@ -14,13 +15,14 @@ public class CoinbaseWebSocketAdapter(
     ILogger<CoinbaseWebSocketAdapter> logger,
     ResiliencePipelineProvider<string> pipelineProvider,
     TickerMapper tickerMapper,
-    IDeduplicator deduplicator) : BaseWebSocketAdapter(bus, logger, pipelineProvider)
+    IDeduplicator deduplicator,
+    IConfiguration config) : BaseWebSocketAdapter(bus, logger, pipelineProvider)
 {
     private readonly TickerMapper _tickerMapper = tickerMapper;
     private readonly IDeduplicator _deduplicator = deduplicator;
     private readonly ILogger<CoinbaseWebSocketAdapter> _logger = logger;
 
-    protected override Uri Endpoint { get; } = new("ws://localhost:8082/coinbase");
+    protected override Uri Endpoint { get; } = new(config["CoinbaseUrl"] ?? "ws://localhost:8082/coinbase");
     protected override ExchangeSource Source => ExchangeSource.Coinbase;
 
     private static ReadOnlySpan<byte> TypeProp => "type"u8;

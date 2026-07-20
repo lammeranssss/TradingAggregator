@@ -20,6 +20,10 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
         "aggregator_ticks_written_total",
         "Total ticks successfully written to DB via COPY BINARY.");
 
+    private static readonly Counter TicksDroppedCounter = Metrics.CreateCounter(
+        "aggregator_ticks_dropped_total",
+        "Total ticks dropped due to database unavailability after retries.");
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("BatchProcessorWorker started.");
@@ -129,6 +133,7 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
         catch (Exception ex)
         {
             _logger.LogError(ex, "Fatal error saving batch. {Count} ticks lost.", buffer.Count);
+            TicksDroppedCounter.Inc(buffer.Count);
         }
         finally
         {

@@ -17,5 +17,32 @@ services:
       timeout: 5s
       retries: 5
 
+  mock-exchanges:
+    build:
+      context: .
+      target: mock
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  aggregator:
+    build:
+      context: .
+      target: aggregator
+    depends_on:
+      trading-db:
+        condition: service_healthy
+      mock-exchanges:
+        condition: service_started
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=trading-db;Port=5432;Database=TradingDb;Username=postgres;Password=postgres;Timeout=3;CommandTimeout=5
+      - BinanceUrl=ws://mock-exchanges:8080/binance
+      - CoinbaseUrl=ws://mock-exchanges:8080/coinbase
+      - ASPNETCORE_URLS=http://+:8080
+
 volumes:
   pg_data:
+    

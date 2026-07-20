@@ -9,8 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenLocalhost(8081);
-    options.ListenLocalhost(8082);
+    options.ListenAnyIP(8080);
 });
 
 builder.Services.Configure<ChaosOptions>(builder.Configuration.GetSection("ChaosOptions"));
@@ -53,8 +52,8 @@ async Task RunExchangeSimulationAsync(WebSocket ws, string exchange, ChaosOption
         : ["BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD"];
 
     ReadOnlyMemory<byte> corruptedBytes = "{\"e\":\"trade\",\"E\":1672531199000,\"s\":\"BTCUSDT\","u8.ToArray();
-    Span<byte> numberSpan = stackalloc byte[32];
 
+    byte[] numberBuffer = new byte[32];
     try
     {
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -99,11 +98,11 @@ async Task RunExchangeSimulationAsync(WebSocket ws, string exchange, ChaosOption
                     jsonWriter.WriteNumber("E"u8, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     jsonWriter.WriteString("s"u8, ticker);
 
-                    Utf8Formatter.TryFormat(price, numberSpan, out int priceBytesWritten, new StandardFormat('F', 2));
-                    jsonWriter.WriteString("p"u8, numberSpan.Slice(0, priceBytesWritten));
+                    Utf8Formatter.TryFormat(price, numberBuffer, out int priceBytesWritten, new StandardFormat('F', 2));
+                    jsonWriter.WriteString("p"u8, numberBuffer.AsSpan(0, priceBytesWritten));
 
-                    Utf8Formatter.TryFormat(volume, numberSpan, out int volBytesWritten, new StandardFormat('F', 4));
-                    jsonWriter.WriteString("q"u8, numberSpan.Slice(0, volBytesWritten));
+                    Utf8Formatter.TryFormat(volume, numberBuffer, out int volBytesWritten, new StandardFormat('F', 4));
+                    jsonWriter.WriteString("q"u8, numberBuffer.AsSpan(0, volBytesWritten));
                 }
                 else
                 {
