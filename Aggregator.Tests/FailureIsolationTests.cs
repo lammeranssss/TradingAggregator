@@ -52,7 +52,12 @@ public class FailureIsolationTests
     {
         var bus = new TickChannelBus();
         var registry = new ResiliencePipelineRegistry<string>();
-        registry.TryAddBuilder("ws-retry", (builder, context) => builder.AddRetry(new() { MaxRetryAttempts = 0 }));
+
+        registry.TryAddBuilder("ws-retry", (builder, context) => builder.AddRetry(new()
+        {
+            MaxRetryAttempts = 1,
+            Delay = TimeSpan.Zero
+        }));
 
         var failingAdapter = new FailingBinanceAdapter(bus, registry);
         var stableAdapter = new StableCoinbaseAdapter(bus, registry);
