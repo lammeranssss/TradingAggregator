@@ -33,8 +33,8 @@ builder.Services.AddResiliencePipeline("db-retry", (pipelineBuilder, context) =>
     pipelineBuilder.AddRetry(new RetryStrategyOptions
     {
         ShouldHandle = new PredicateBuilder()
-        .Handle<TimeoutException>()
-        .Handle<NpgsqlException>(ex => ex.IsTransient),
+            .Handle<TimeoutException>()
+            .Handle<NpgsqlException>(ex => ex.IsTransient),
         MaxRetryAttempts = 3,
         Delay = TimeSpan.FromSeconds(1),
         MaxDelay = TimeSpan.FromSeconds(10),
@@ -58,14 +58,14 @@ builder.Services.AddResiliencePipeline("ws-retry", (pipelineBuilder, context) =>
     pipelineBuilder.AddRetry(new RetryStrategyOptions
     {
         ShouldHandle = new PredicateBuilder()
-        .Handle<WebSocketException>()
-        .Handle<IOException>()
-        .Handle<SocketException>()
-        .Handle<InvalidDataException>(), // Перехватываем Poison Pill для реконнекта
-        MaxRetryAttempts = int.MaxValue,
+            .Handle<WebSocketException>()
+            .Handle<IOException>()
+            .Handle<SocketException>()
+            .Handle<InvalidDataException>(),
+        MaxRetryAttempts = int.MaxValue,
         Delay = TimeSpan.FromSeconds(2),
-        MaxDelay = TimeSpan.FromSeconds(30), // Ограничение паузы реконнекта максимум в 30 секунд
-        BackoffType = DelayBackoffType.Exponential,
+        MaxDelay = TimeSpan.FromSeconds(30),
+        BackoffType = DelayBackoffType.Exponential,
         UseJitter = true,
         OnRetry = args =>
         {
@@ -94,6 +94,7 @@ builder.Services.AddSingleton<IDeduplicator>(sp =>
 builder.Services.AddSingleton<ITickRepository, TickRepository>();
 
 builder.Services.AddHostedService<BatchProcessorWorker>();
+builder.Services.AddHostedService<ChannelMetricsReporter>();
 builder.Services.AddHostedService<BinanceWebSocketAdapter>();
 builder.Services.AddHostedService<CoinbaseWebSocketAdapter>();
 
