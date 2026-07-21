@@ -10,21 +10,28 @@ public class TickerMapper
     private readonly ConcurrentDictionary<int, TickerCacheNode> _spanCache = new();
     private int _counter = 0;
     private const int MaxTickers = 10_000;
+    private readonly Lock _addLock = new();
 
     public int GetOrAddId(string ticker)
     {
         if (_tickerToId.TryGetValue(ticker, out var existingId)) return existingId;
 
-        if (Volatile.Read(ref _counter) >= MaxTickers)
-            throw new InvalidOperationException($"Ticker dictionary limit ({MaxTickers}) reached.");
+        lock (_addLock)
+        {
+            if (_tickerToId.TryGetValue(ticker, out existingId)) return existingId;
 
-        var id = _tickerToId.GetOrAdd(ticker, _ => Interlocked.Increment(ref _counter));
+            if (_counter >= MaxTickers)
+                throw new InvalidOperationException($"Ticker dictionary limit ({MaxTickers}) reached.");
 
-        var bytes = Encoding.UTF8.GetBytes(ticker);
-        var hash = ComputeFnv1aHash(bytes);
-        _spanCache.TryAdd(hash, new TickerCacheNode(bytes, ticker, id));
+            var id = ++_counter;
+            _tickerToId.TryAdd(ticker, id);
 
-        return id;
+            var bytes = Encoding.UTF8.GetBytes(ticker);
+            var hash = ComputeFnv1aHash(bytes);
+            _spanCache.TryAdd(hash, new TickerCacheNode(bytes, ticker, id));
+
+            return id;
+        }
     }
 
     public bool TryGetIdFromSpan(ReadOnlySpan<byte> span, out int tickerId, out string tickerString)
