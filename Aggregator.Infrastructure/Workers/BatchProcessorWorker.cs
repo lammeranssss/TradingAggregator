@@ -20,10 +20,6 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
         "aggregator_ticks_written_total",
         "Total ticks successfully written to DB via COPY BINARY.");
 
-    private static readonly Counter TicksDroppedCounter = Metrics.CreateCounter(
-        "aggregator_ticks_dropped_total",
-        "Total ticks dropped due to database unavailability after retries.");
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("BatchProcessorWorker started.");
@@ -42,10 +38,7 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                     {
                         if (!await _bus.WaitToReadAsync(stoppingToken)) break;
                     }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
+                    catch (OperationCanceledException) { break; }
                 }
 
                 if (!timeoutCts.TryReset())
@@ -70,11 +63,11 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                         }
                     }
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { /* Таймаут сбора батча, идем сбрасывать что есть */ }
 
                 if (buffer.Count > 0)
                 {
-                    await FlushAsync(buffer, CancellationToken.None);
+                    await FlushAsync(buffer, stoppingToken);
                 }
             }
         }
@@ -101,19 +94,19 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                     }
                 }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Graceful drain timed out.");
-        }
-        finally
-        {
+
             if (buffer.Count > 0)
             {
                 _logger.LogInformation("Flushing final {Count} ticks.", buffer.Count);
                 await FlushAsync(buffer, gracefulCts.Token);
             }
-
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Graceful drain timed out. Unflushed memory ticks are lost.");
+        }
+        finally
+        {
             timeoutCts.Dispose();
             reg.Dispose();
         }
@@ -129,15 +122,21 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
         {
             await _repository.SaveBatchAsync(buffer, cancellationToken);
             TicksWrittenCounter.Inc(buffer.Count);
+            buffer.Clear();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Fatal error saving batch. {Count} ticks lost.", buffer.Count);
-            TicksDroppedCounter.Inc(buffer.Count);
-        }
-        finally
-        {
-            buffer.Clear();
+            _logger.LogError(ex, "Fatal error saving batch. Retrying {Count} ticks in 5 seconds to prevent data loss...", buffer.Count);
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+            catch (OperationCanceledException) { }
         }
     }
 }
