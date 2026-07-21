@@ -12,7 +12,8 @@ public class LockFreeDeduplicator : IDeduplicator, IDisposable
 {
     private readonly ConcurrentDictionary<TickKey, long> _cache = new();
     private readonly ConcurrentQueue<(TickKey Key, long ArrivalTime)> _evictionQueue = new();
-
+    private int _currentSize = 0;
+    private const int MaxCapacity = 500_000;
     private readonly ITimer _evictionTimer;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LockFreeDeduplicator> _logger;
@@ -35,11 +36,18 @@ public class LockFreeDeduplicator : IDeduplicator, IDisposable
 
     public bool IsUnique(in Tick tick, int tickerId)
     {
+        if (Volatile.Read(ref _currentSize) >= MaxCapacity)
+        {
+            _logger.LogWarning("Deduplicator capacity reached, bypassing cache to prevent OOM.");
+            return true;
+        }
+
         var key = new TickKey(tick.Source, tickerId, tick.TimestampMs, tick.Price, tick.Volume);
         var arrivalTime = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
         if (_cache.TryAdd(key, arrivalTime))
         {
+            Interlocked.Increment(ref _currentSize);
             _evictionQueue.Enqueue((key, arrivalTime));
             return true;
         }
@@ -63,7 +71,10 @@ public class LockFreeDeduplicator : IDeduplicator, IDisposable
                 if (_evictionQueue.TryDequeue(out var dequeuedItem))
                 {
                     var kvp = new KeyValuePair<TickKey, long>(dequeuedItem.Key, dequeuedItem.ArrivalTime);
-                    ((ICollection<KeyValuePair<TickKey, long>>)_cache).Remove(kvp);
+                    if (((ICollection<KeyValuePair<TickKey, long>>)_cache).Remove(kvp))
+                    {
+                        Interlocked.Decrement(ref _currentSize);
+                    }
                 }
             }
         }
@@ -82,6 +93,5 @@ public class LockFreeDeduplicator : IDeduplicator, IDisposable
         _evictionTimer.Dispose();
         _cache.Clear();
         _evictionQueue.Clear();
-        GC.SuppressFinalize(this);
     }
 }
