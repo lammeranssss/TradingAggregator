@@ -38,7 +38,10 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                     {
                         if (!await _bus.WaitToReadAsync(stoppingToken)) break;
                     }
-                    catch (OperationCanceledException) { break; }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
 
                 if (!timeoutCts.TryReset())
@@ -63,7 +66,7 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
                         }
                     }
                 }
-                catch (OperationCanceledException) { /* Таймаут сбора батча, идем сбрасывать что есть */ }
+                catch (OperationCanceledException) { /* Таймаут накопления батча */ }
 
                 if (buffer.Count > 0)
                 {
@@ -103,7 +106,7 @@ public class BatchProcessorWorker(TickChannelBus bus, ITickRepository repository
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Graceful drain timed out. Unflushed memory ticks are lost.");
+            _logger.LogWarning("Graceful drain timed out.");
         }
         finally
         {
