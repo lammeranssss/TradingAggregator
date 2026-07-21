@@ -27,13 +27,13 @@ public class TickRepository(
             await using var transaction = await connection.BeginTransactionAsync(ct);
 
             const string createTempTableSql = @"
-    CREATE TEMP TABLE temp_ticks (
+    CREATE TEMP TABLE IF NOT EXISTS temp_ticks (
         Ticker VARCHAR(50),
         Price NUMERIC(18, 8),
         Volume NUMERIC(18, 8),
         TimestampMs BIGINT,
         SourceId SMALLINT
-    ) ON COMMIT DROP;";
+    ) ON COMMIT DELETE ROWS;";
 
             await using (var cmd = new NpgsqlCommand(createTempTableSql, connection, transaction))
             {
