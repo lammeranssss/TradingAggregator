@@ -116,6 +116,11 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
                 if (result.IsCompleted) break;
             }
         }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Corrupted JSON payload in TCP stream. Aborting pipeline to force reconnect.");
+            throw new InvalidDataException("Stream payload corrupted by malformed JSON.", ex);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error reading pipe data. Forcing reconnect.");

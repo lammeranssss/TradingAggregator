@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Text.Json;
 using Aggregator.Core.Interfaces;
 using Aggregator.Core.Services;
 using Aggregator.Infrastructure.Data;
@@ -61,7 +62,8 @@ builder.Services.AddResiliencePipeline("ws-retry", (pipelineBuilder, context) =>
             .Handle<WebSocketException>()
             .Handle<IOException>()
             .Handle<SocketException>()
-            .Handle<InvalidDataException>(),
+            .Handle<InvalidDataException>()
+            .Handle<JsonException>(),
         MaxRetryAttempts = int.MaxValue,
         Delay = TimeSpan.FromSeconds(2),
         MaxDelay = TimeSpan.FromSeconds(30),
@@ -93,6 +95,7 @@ builder.Services.AddSingleton<IDeduplicator>(sp =>
 
 builder.Services.AddSingleton<ITickRepository, TickRepository>();
 
+// Hosted Services
 builder.Services.AddHostedService<BatchProcessorWorker>();
 builder.Services.AddHostedService<ChannelMetricsReporter>();
 builder.Services.AddHostedService<BinanceWebSocketAdapter>();
