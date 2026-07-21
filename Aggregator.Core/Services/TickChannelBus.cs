@@ -17,6 +17,8 @@ public class TickChannelBus
         "Total ticks successfully read from exchange sockets.",
         new CounterConfiguration { LabelNames = new[] { "exchange" } });
 
+    private readonly Counter.Child[] _ingestedCounters;
+
     public int CurrentCount => _channel.Reader.Count;
     public ChannelReader<Tick> Reader => _channel.Reader;
 
@@ -30,6 +32,11 @@ public class TickChannelBus
             FullMode = BoundedChannelFullMode.Wait
         };
         _channel = Channel.CreateBounded<Tick>(options);
+        _ingestedCounters = new Counter.Child[SourceLabels.Length];
+        for (int i = 0; i < SourceLabels.Length; i++)
+        {
+            _ingestedCounters[i] = TicksIngestedCounter.WithLabels(SourceLabels[i]);
+        }
     }
 
     public async ValueTask PublishAsync(Tick tick, CancellationToken ct)
@@ -37,9 +44,8 @@ public class TickChannelBus
         await _channel.Writer.WriteAsync(tick, ct);
 
         int sourceIndex = (byte)tick.Source;
-        var label = sourceIndex < SourceLabels.Length ? SourceLabels[sourceIndex] : SourceLabels[0];
-
-        TicksIngestedCounter.WithLabels(label).Inc();
+        int index = sourceIndex < _ingestedCounters.Length ? sourceIndex : 0;
+        _ingestedCounters[index].Inc();
     }
 
     public ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken)
