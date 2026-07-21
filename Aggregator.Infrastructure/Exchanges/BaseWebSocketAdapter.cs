@@ -96,15 +96,14 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
                 var result = await reader.ReadAsync(ct);
                 var buffer = result.Buffer;
 
-                var consumed = buffer.Start;
-                var examined = buffer.End;
-
                 if (buffer.Length > MaxMessageSize)
                 {
-                    _logger.LogCritical("[SECURITY] Poison pill detected in stream! Buffer size {Length} bytes exceeds limit. Flushing pipe to prevent deadlock.", buffer.Length);
-                    reader.AdvanceTo(buffer.End, buffer.End);
-                    continue;
+                    _logger.LogCritical("[SECURITY] Poison pill detected! Buffer size {Length} bytes exceeds limit. Aborting stream.", buffer.Length);
+                    throw new InvalidDataException("Poison pill detected. Stream state is compromised.");
                 }
+
+                var consumed = buffer.Start;
+                var examined = buffer.End;
 
                 while (TryParseJsonMessage(ref buffer, out var message, out var nextPosition))
                 {
@@ -119,7 +118,8 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error reading pipe data.");
+            _logger.LogError(ex, "Error reading pipe data. Forcing reconnect.");
+            throw;
         }
         finally { await reader.CompleteAsync(); }
     }
@@ -129,7 +129,7 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
         message = default;
         nextPosition = default;
 
-        var jsonReader = new Utf8JsonReader(buffer);
+        var jsonReader = new Utf8JsonReader(buffer, isFinalBlock: false, state: default);
         try
         {
             if (!jsonReader.Read()) return false;
@@ -150,6 +150,7 @@ public abstract class BaseWebSocketAdapter(TickChannelBus bus, ILogger logger, R
         }
         catch (JsonException)
         {
+            throw;
         }
         return false;
     }

@@ -4,7 +4,7 @@ using System.Text.Json;
 using Aggregator.Core.Interfaces;
 using Aggregator.Core.Models;
 using Aggregator.Core.Services;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Polly.Registry;
 
@@ -16,13 +16,13 @@ public class BinanceWebSocketAdapter(
     ResiliencePipelineProvider<string> pipelineProvider,
     TickerMapper tickerMapper,
     IDeduplicator deduplicator,
-    IConfiguration config) : BaseWebSocketAdapter(bus, logger, pipelineProvider)
+    IOptions<ExchangeOptions> options) : BaseWebSocketAdapter(bus, logger, pipelineProvider)
 {
     private readonly TickerMapper _tickerMapper = tickerMapper;
     private readonly IDeduplicator _deduplicator = deduplicator;
     private readonly ILogger<BinanceWebSocketAdapter> _logger = logger;
 
-    protected override Uri Endpoint { get; } = new(config["BinanceUrl"] ?? "ws://localhost:8081/binance");
+    protected override Uri Endpoint { get; } = new(options.Value.BinanceUrl);
     protected override ExchangeSource Source => ExchangeSource.Binance;
 
     private static ReadOnlySpan<byte> StreamProp => "e"u8;
@@ -35,7 +35,7 @@ public class BinanceWebSocketAdapter(
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return null;
 
-        long timestampMs = 0; 
+        long timestampMs = 0;
         int tickerId = 0;
         string tickerStr = string.Empty;
         decimal price = 0;
